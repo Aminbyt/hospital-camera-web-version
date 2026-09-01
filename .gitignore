@@ -1,0 +1,22 @@
+# --- Environment / secrets ---
+.env
+backend/.env
+
+# --- Python virtual environment ---
+exe_env/
+backend/exe_env/
+venv/
+backend/venv/
+backend/.env.example
+
+# --- Backend data & models (local runtime data, not source) ---
+backend/models/
+backend/data/
+
+# --- Python bytecode/cache ---
+__pycache__/
+*.pyc
+
+# --- Node / frontend ---
+node_modules/
+dist/
