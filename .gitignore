@@ -1,6 +1,7 @@
 # --- Environment / secrets ---
 .env
 backend/.env
+training/who_v2/train_env
 
 # --- Python virtual environment ---
 exe_env/
@@ -22,3 +23,22 @@ node_modules/
 dist/
 
 backend/backend_env/
+training/who_v2/train_env
+
+# Python virtual environments
+train_env/
+**/train_env/
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# WHO v2 generated/training data
+training/who_v2/train_env/
+training/who_v2/cache/
+training/who_v2/checkpoints/
+training/who_v2/manifests/
+training/who_v2/reports/
