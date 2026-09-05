@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Rooms from './pages/Rooms'
 import RoomDetail from './pages/RoomDetail'
 import Cameras from './pages/Cameras'
+import LiveCameras from './pages/LiveCameras'
 import CameraDetail from './pages/CameraDetail'
 import Alerts from './pages/Alerts'
 import Events from './pages/Events'
@@ -21,7 +22,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/rooms/:slug" element={<RoomDetail />} />
-            <Route path="/live" element={<Cameras />} />
+            <Route path="/live" element={<LiveCameras />} />
             <Route path="/cameras" element={<Cameras />} />
             <Route path="/cameras/:id" element={<CameraDetail />} />
             <Route path="/alerts" element={<Alerts />} />

@@ -11,7 +11,7 @@ export default function Rooms() {
   const [sort, setSort] = useState('name')
 
   const load = () => api.cameras.list().then(c => setCameras(c.map(withMeta)))
-  useEffect(() => { load(); window.addEventListener('akam-meta-updated', load); return () => window.removeEventListener('akam-meta-updated', load) }, [])
+  useEffect(() => { const refresh=()=>load(); load(); window.addEventListener('akam-meta-updated', refresh); window.addEventListener('akam-rooms-updated', refresh); return () => { window.removeEventListener('akam-meta-updated', refresh); window.removeEventListener('akam-rooms-updated', refresh) } }, [])
 
   const rooms = useMemo(() => groupRooms(cameras), [cameras])
   const departments = [...new Set(rooms.map(r => r.department))].sort()

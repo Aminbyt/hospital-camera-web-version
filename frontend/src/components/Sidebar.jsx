@@ -1,42 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-
-const links = [
-  { to: '/', label: 'Dashboard', icon: '▦', end: true },
-  { to: '/rooms', label: 'Rooms', icon: '▤' },
-  { to: '/cameras', label: 'Cameras', icon: '◉' },
-  { to: '/alerts', label: 'Alerts', icon: '△' },
-  { to: '/events', label: 'Events', icon: '≡' },
-  { to: '/settings', label: 'Settings', icon: '⚙' },
-]
-
-export default function Sidebar() {
-  const [backend, setBackend] = useState(false)
-  useEffect(() => {
-    const load = () => api.health().then(() => setBackend(true)).catch(() => setBackend(false))
-    load(); const t = setInterval(load, 5000); return () => clearInterval(t)
-  }, [])
-
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <div className="brand-mark">A</div>
-        <div>AKAM HEALTH<span>SMART SCRUB VISION</span></div>
-      </div>
-      <nav className="sidebar-nav">
-        {links.map((l) => (
-          <NavLink key={l.to} to={l.to} end={l.end}
-            className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
-            <span className="nav-icon">{l.icon}</span>{l.label}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="sidebar-foot">
-        <div className="system-line"><span className={'status-dot ' + (backend ? 'online' : 'offline')} />System {backend ? 'Online' : 'Offline'}</div>
-        <div className="system-row"><span>Backend</span><strong>{backend ? 'Connected' : 'Unavailable'}</strong></div>
-        <div className="system-row"><span>AI Engine</span><strong>{backend ? 'Ready' : 'Unknown'}</strong></div>
-      </div>
-    </aside>
-  )
-}
+import logo from '../assets/akam-logo.png'
+const links=[{to:'/',label:'Dashboard',icon:'▦',end:true},{to:'/rooms',label:'Rooms',icon:'▤'},{to:'/live',label:'Live Cameras',icon:'◉'},{to:'/cameras',label:'Cameras',icon:'⌁'},{to:'/alerts',label:'Alerts',icon:'△'},{to:'/events',label:'History / Events',icon:'≡'},{to:'/settings',label:'Settings',icon:'⚙'}]
+export default function Sidebar(){const[backend,setBackend]=useState(false);useEffect(()=>{const load=()=>api.health().then(()=>setBackend(true)).catch(()=>setBackend(false));load();const t=setInterval(load,5000);return()=>clearInterval(t)},[]);return <aside className="sidebar"><div className="sidebar-brand"><div className="brand-logo-shell"><img src={logo} alt="AKAM Health logo"/></div><div>AKAM HEALTH<span>SMART SCRUB VISION</span></div></div><nav className="sidebar-nav">{links.map(l=><NavLink key={l.to} to={l.to} end={l.end} className={({isActive})=>'sidebar-link'+(isActive?' active':'')}><span className="nav-icon">{l.icon}</span>{l.label}</NavLink>)}</nav><div className="sidebar-foot"><div className="system-line"><span className={'status-dot '+(backend?'online':'offline')}/>System {backend?'Online':'Offline'}</div><div className="system-row"><span>Backend</span><strong>{backend?'Connected':'Unavailable'}</strong></div><div className="system-row"><span>AI Engine</span><strong>{backend?'Ready':'Unknown'}</strong></div></div></aside>}

@@ -1,29 +1,36 @@
-# AKAM HEALTH Smart Scrub Vision — Frontend Upgrade
+# AKAM Health frontend upgrade — weekly operations + room registry
 
-Implemented from the command-center UI specification:
+This frontend update adds the requested hospital operations workflow without requiring backend schema changes.
 
-- Dark clinical enterprise design system and command-center top bar
-- Sidebar: Dashboard, Rooms, Cameras, Alerts, Events, Settings + backend/AI health
-- Hospital → Department → Room → Camera hierarchy
-- Dashboard KPI overview before room monitoring
-- Dedicated Rooms page grouped by department
-- Dedicated Room Monitoring page with camera filters and rich live cards
-- Room and camera navigation opens in new browser tabs
-- Breadcrumbs on detailed monitoring pages
-- Expanded Camera Detail / AI status workspace
-- Dedicated Cameras management page with add/edit/enable/disable/delete/test connection
-- Expanded camera fields in UI: type, department, room, floor/area, purpose
-- Alerts grouped into Critical / Attention / Informational
-- Events filters for department, room, camera, user and compliance; pagination and detail modal
-- Settings visual organization for cameras, AI detection, face/wash, notifications and staff
+## New behavior
 
-## Frontend-only metadata
+- **Room Registry in Settings**: define rooms (ICU, CCU, Surgery, etc.) before assigning cameras.
+- **Camera creation requires a registered room**.
+- Existing camera room names are automatically imported into the registry as `Imported / Unassigned` so current installations keep working.
+- **Dashboard is week-based** (Monday–Sunday) and can display the current week plus 1, 2, or 3 weeks ago.
+- Weekly dashboard analytics include:
+  - daily hand-wash/session detections
+  - compliant sessions
+  - most-detected employees
+  - sessions by room
+- Room overview remains live and opens each room in a new browser tab.
+- **Live Cameras** is a dedicated compact camera wall showing only cameras currently online across all rooms.
+- Camera tiles show room, department, current user/authentication, PPE and wash state.
+- **AKAM Health logo** is included in the sidebar/mobile command header.
+- Camera administration remains separate from Live Cameras.
 
-The existing backend Camera schema only persists `name`, `source`, `room`, enabled state and detection toggles. Department, floor/area, camera type and purpose are therefore stored in browser localStorage for now under `akam-smart-scrub-camera-meta-v1`.
+## Storage note
 
-This keeps the current FastAPI API fully compatible. A future backend migration can move these fields into SQLite without changing the new UI hierarchy.
+The FastAPI Camera model currently stores `room` but not a standalone Room table. Therefore the Room Registry and camera metadata (department/type/purpose) are stored in browser `localStorage` for now. Camera `room` itself continues to be saved to the backend, so events can still be associated with a camera and resolved to its room in the frontend.
 
-## Backend limitations shown conservatively in UI
+A future backend migration can move the Room Registry into SQLite/FastAPI without changing the page structure.
 
-- The camera status API does not expose a dedicated WHO step count or session timestamps. The UI does not invent those values; final readiness is used as the completed state.
-- Alert `level` is currently generally `info`; obvious offline/missing/incomplete alert messages are categorized visually until backend severity is wired explicitly.
+## Run
+
+```bat
+cd frontend
+npm install
+npm run dev
+```
+
+Backend remains on `http://localhost:8080` unless `VITE_API_BASE` is changed.

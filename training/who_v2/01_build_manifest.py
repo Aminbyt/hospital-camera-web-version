@@ -28,14 +28,30 @@ def find_child_ci(parent: Path, name: str):
 
 
 def load_annotation(path: Path):
-    with path.open('r', encoding='utf-8') as f:
-        obj = json.load(f)
+    try:
+        with path.open('r', encoding='utf-8') as f:
+            obj = json.load(f)
+
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f'JSON parse error | file={path} | '
+            f'line={e.lineno} col={e.colno} pos={e.pos} | {e.msg}'
+        ) from e
+
+    except Exception as e:
+        raise ValueError(
+            f'Annotation read error | file={path} | '
+            f'{type(e).__name__}: {e}'
+        ) from e
+
     labels = obj.get('labels')
+
     if not isinstance(labels, list):
         raise ValueError(f'{path}: missing labels[]')
-    extras = {k: v for k, v in obj.items() if k != 'labels'}
-    return labels, extras
 
+    extras = {k: v for k, v in obj.items() if k != 'labels'}
+
+    return labels, extras
 
 def consensus(vals):
     if not vals:
