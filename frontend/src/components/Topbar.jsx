@@ -1,0 +1,33 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api/client'
+
+export default function Topbar() {
+  const [now, setNow] = useState(new Date())
+  const [online, setOnline] = useState(false)
+
+  useEffect(() => {
+    const clock = setInterval(() => setNow(new Date()), 1000)
+    const check = () => api.health().then(() => setOnline(true)).catch(() => setOnline(false))
+    check()
+    const health = setInterval(check, 5000)
+    return () => { clearInterval(clock); clearInterval(health) }
+  }, [])
+
+  return (
+    <header className="topbar">
+      <div className="topbar-brand-mobile">
+        <strong>AKAM HEALTH</strong><span>SMART SCRUB VISION</span>
+      </div>
+      <div className="topbar-spacer" />
+      <div className="topbar-status">
+        <span className={'status-dot ' + (online ? 'online' : 'offline')} />
+        {online ? 'SYSTEM ONLINE' : 'BACKEND OFFLINE'}
+      </div>
+      <div className="topbar-time mono">
+        {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </div>
+      <button className="icon-button" title="Notifications">●</button>
+      <div className="profile-chip"><span>AK</span><div><strong>Operator</strong><small>Hospital Admin</small></div></div>
+    </header>
+  )
+}

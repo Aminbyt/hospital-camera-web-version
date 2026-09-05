@@ -33,6 +33,62 @@ def _face_cache_path():
     return os.path.join(env.DATA_ROOT, "face_cache.pkl")
 
 
+def _largest_face(faces):
+    """Return the largest detected face. This keeps registration and live
+    recognition focused on the person closest to the sink camera instead of
+    relying on InsightFace detection ordering.
+    """
+    if not faces:
+        return None
+
+    def area(face):
+        try:
+            x1, y1, x2, y2 = face.bbox
+            return max(0.0, float(x2 - x1)) * max(0.0, float(y2 - y1))
+        except Exception:
+            return 0.0
+
+    return max(faces, key=area)
+
+
+
+
+def _safe_face_embedding(face):
+    """Return a finite L2-normalized InsightFace embedding or None.
+
+    Prefer InsightFace's `normed_embedding` because that is what the original
+    project used successfully. If it is unavailable or invalid, fall back to
+    the raw `embedding` and normalize it ourselves.
+    """
+    if face is None:
+        return None
+
+    # Try both representations independently. IMPORTANT: an existing but
+    # invalid raw embedding must not prevent us from trying normed_embedding.
+    candidates = [
+        ("normed_embedding", getattr(face, "normed_embedding", None)),
+        ("embedding", getattr(face, "embedding", None)),
+    ]
+
+    for source_name, raw in candidates:
+        if raw is None:
+            continue
+        try:
+            vec = np.asarray(raw, dtype=np.float32).reshape(-1)
+        except Exception:
+            continue
+        if vec.size == 0 or not np.all(np.isfinite(vec)):
+            continue
+
+        norm = float(np.linalg.norm(vec))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            continue
+
+        return vec / norm
+
+    return None
+
+
 def _embed_person_folder(person_dir, person_name):
     """Runs InsightFace over every photo in a person's folder and returns
     the list of embeddings. Used both for the first-time full scan and for
@@ -44,8 +100,13 @@ def _embed_person_folder(person_dir, person_name):
             db_img = cv2.imread(img_path)
             if db_img is not None:
                 faces = GLOBAL_INSIGHT_APP.get(db_img)
-                if faces:
-                    embeddings.append(faces[0].normed_embedding)
+                face = _largest_face(faces)
+                if face is not None:
+                    embedding = _safe_face_embedding(face)
+                    if embedding is not None:
+                        embeddings.append(embedding)
+                    else:
+                        print(f"  [WARNING] Invalid face embedding in {img_name}")
                 else:
                     print(f"  [WARNING] No face detected in {img_name}")
     return embeddings
@@ -154,15 +215,22 @@ def add_single_face_to_cache(person_name, img_path):
         db_img = cv2.imread(img_path)
         if db_img is not None:
             faces = GLOBAL_INSIGHT_APP.get(db_img)
-            if faces:
-                GLOBAL_DB_EMBEDDINGS[person_name].append(faces[0].normed_embedding)
+            face = _largest_face(faces)
+            if face is not None:
+                embedding = _safe_face_embedding(face)
+                if embedding is None:
+                    print(f"[WARNING] Registration image for {person_name} produced an invalid embedding: {img_path}")
+                    return
+                GLOBAL_DB_EMBEDDINGS[person_name].append(embedding)
                 print(f"[INFO] Injected new angle for {person_name} into RAM!")
                 with open(_face_cache_path(), 'wb') as f:
                     pickle.dump(GLOBAL_DB_EMBEDDINGS, f)
+            else:
+                print(f"[WARNING] Registration image for {person_name} contains no InsightFace-detectable face: {img_path}")
 
 
 def recognize_face_sync(frame_to_check, db_path=None):
-    """Thread-safe synchronous face recognition using a global mutex lock."""
+    """Thread-safe synchronous face recognition using robust cosine similarity."""
     global GLOBAL_INSIGHT_APP, GLOBAL_DB_EMBEDDINGS
     db_path = db_path or REG_PATH
 
@@ -172,28 +240,68 @@ def recognize_face_sync(frame_to_check, db_path=None):
                 initialize_face_engine(db_path)
 
             if not GLOBAL_DB_EMBEDDINGS:
+                print("[AUTH] Face database is empty.")
                 return "UNKNOWN"
 
             faces = GLOBAL_INSIGHT_APP.get(frame_to_check)
-            if not faces:
+            detected_face = _largest_face(faces)
+            if detected_face is None:
+                print("[AUTH] InsightFace found no face in authentication frame.")
                 return "NO_FACE"
 
-            detected_face = faces[0]
+            live_embedding = _safe_face_embedding(detected_face)
+            if live_embedding is None:
+                print("[AUTH] Live face produced an invalid/non-finite embedding.")
+                return "UNKNOWN"
+
             best_match = "UNKNOWN"
-            min_dist = 1.0
+            best_similarity = -1.0
+            total_saved = 0
+            valid_saved = 0
+            invalid_saved = 0
 
             for name, embeddings_list in GLOBAL_DB_EMBEDDINGS.items():
                 for saved_embedding in embeddings_list:
-                    dist = np.sum(np.square(detected_face.normed_embedding - saved_embedding))
-                    if dist < 0.55:
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_match = name
+                    total_saved += 1
+                    saved = np.asarray(saved_embedding, dtype=np.float32).reshape(-1)
+                    if (saved.size != live_embedding.size or
+                            not np.all(np.isfinite(saved))):
+                        invalid_saved += 1
+                        continue
 
-            return best_match
+                    saved_norm = float(np.linalg.norm(saved))
+                    if not np.isfinite(saved_norm) or saved_norm <= 1e-12:
+                        invalid_saved += 1
+                        continue
+
+                    saved = saved / saved_norm
+                    similarity = float(np.dot(live_embedding, saved))
+                    if not np.isfinite(similarity):
+                        invalid_saved += 1
+                        continue
+
+                    valid_saved += 1
+                    if similarity > best_similarity:
+                        best_similarity = similarity
+                        best_match = name
+
+            FACE_MATCH_THRESHOLD = 0.40
+            accepted = valid_saved > 0 and best_similarity >= FACE_MATCH_THRESHOLD
+            print(
+                f"[AUTH] Best face match: {best_match} | "
+                f"similarity={best_similarity:.3f} | "
+                f"threshold={FACE_MATCH_THRESHOLD:.2f} | "
+                f"accepted={accepted} | "
+                f"saved={total_saved} valid={valid_saved} invalid={invalid_saved}"
+            )
+
+            if valid_saved == 0:
+                print("[AUTH] ERROR: zero usable saved embeddings. Delete face_cache.pkl and restart with this file.")
+
+            return best_match if accepted else "UNKNOWN"
 
         except Exception as e:
-            print(f"[ERROR] InsightFace Auth Error: {e}")
+            print(f"[ERROR] InsightFace Auth Error: {type(e).__name__}: {e}")
             return "UNKNOWN"
 
 
@@ -215,9 +323,22 @@ class AIModels:
 
         print("[DEBUG] Loading MediaPipe Face Detection (Gatekeeper)...")
         self.mp_face = mp.solutions.face_detection
-        self.face_detector = self.mp_face.FaceDetection(
-            min_detection_confidence=cfg.get("face_detection_confidence")
-        )
+        # Use MediaPipe's full-range face detector when supported.  Some
+        # MediaPipe builds differ, so fall back to the original constructor
+        # instead of letting face-detector setup prevent the camera worker
+        # from starting at all.
+        face_conf = cfg.get("face_detection_confidence")
+        try:
+            self.face_detector = self.mp_face.FaceDetection(
+                model_selection=1,
+                min_detection_confidence=face_conf,
+            )
+            print(f"[OK] MediaPipe Face Detection loaded (full-range, conf={face_conf}).")
+        except (TypeError, ValueError) as e:
+            print(f"[WARN] Full-range MediaPipe face detector unavailable ({e}); using default model.")
+            self.face_detector = self.mp_face.FaceDetection(
+                min_detection_confidence=face_conf
+            )
 
         self.frame_counter = 0
         self.last_yolo_boxes = []
@@ -273,14 +394,19 @@ class AIModels:
         return frame, has_mask, has_hat
 
     def detect_face(self, frame_rgb):
-        face_results = self.face_detector.process(frame_rgb)
-        if not face_results.detections:
+        """Fast face-presence gate used before the heavier InsightFace scan.
+
+        MediaPipe already applies its own detection-confidence threshold, so
+        do not reject a valid detection just because the face occupies less
+        than 10% of a wide-angle camera frame.
+        """
+        try:
+            face_results = self.face_detector.process(frame_rgb)
+            return bool(face_results.detections)
+        except Exception as e:
+            # A transient MediaPipe failure should not kill the camera loop.
+            print(f"[WARN] MediaPipe face gate error: {e}")
             return False
-        for detection in face_results.detections:
-            bboxC = detection.location_data.relative_bounding_box
-            if bboxC.width >= 0.10:
-                return True
-        return False
 
     def detect_hands(self, frame_rgb):
         hand_results = self.hands.process(frame_rgb)

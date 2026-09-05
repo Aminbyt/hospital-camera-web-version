@@ -103,6 +103,18 @@ class CameraStream:
         self.auth_message = "WAITING FOR FACE..."
         self.auth_color = "normal"
 
+        # InsightFace identity checks run off the camera loop so MJPEG stays smooth.
+        # The worker thread only computes recognition; session changes are applied
+        # back on the main camera thread via _consume_auth_result().
+        self._auth_result_lock = threading.Lock()
+        self._pending_auth_result = None
+        self._auth_thread = None
+
+        # Require the same different identity twice before swapping users.
+        self._switch_candidate = None
+        self._switch_candidate_hits = 0
+        self._switch_confirmations_required = 2
+
         self._frame_lock = threading.Lock()
         self.latest_jpeg = None
         self.latest_status = {
@@ -191,6 +203,9 @@ class CameraStream:
             hand_results = self.ai_models.detect_hands(clean_rgb)
             has_any_face = self.ai_models.detect_face(clean_rgb)
 
+            # Apply any finished async InsightFace result on THIS main camera thread.
+            self._consume_auth_result()
+
             if self.session_manager.is_authenticated() and (has_any_face or hand_results['detected']):
                 self.session_manager.update_presence()
 
@@ -198,11 +213,7 @@ class CameraStream:
                 self.auth_check_counter += 1
                 if self.auth_check_counter % 30 == 0:
                     if not self.session_manager.is_authenticating and self.session_manager.can_attempt_auth():
-                        self.session_manager.is_authenticating = True
-                        self.auth_message = "SCANNING FACE..."
-                        self.auth_color = "warning"
-                        auth_result = recognize_face_sync(frame.copy())
-                        self.handle_auth_result(auth_result)
+                        self._start_auth_check(frame.copy())
             else:
                 self.auth_check_counter = 0
                 if self.session_manager.check_presence_timeout():
@@ -311,32 +322,102 @@ class CameraStream:
         with self._frame_lock:
             self.latest_status[key] = value
 
-    # ---- auth / logout (ported unchanged) -----------------------------
+
+    def _start_auth_check(self, frame_to_check):
+        """Run expensive InsightFace recognition without blocking video processing."""
+        if self.session_manager.is_authenticating:
+            return
+
+        self.session_manager.is_authenticating = True
+        self.auth_message = "SCANNING FACE..."
+        self.auth_color = "warning"
+
+        def _worker():
+            try:
+                result = recognize_face_sync(frame_to_check)
+            except Exception:
+                logging.exception(f"[{self.camera_name}] async face recognition failed")
+                result = "UNKNOWN"
+
+            with self._auth_result_lock:
+                self._pending_auth_result = result
+
+        self._auth_thread = threading.Thread(
+            target=_worker,
+            daemon=True,
+            name=f"face-auth-{self.camera_id}",
+        )
+        self._auth_thread.start()
+
+    def _consume_auth_result(self):
+        """Take one finished recognition result and apply it safely in the camera loop."""
+        with self._auth_result_lock:
+            result = self._pending_auth_result
+            self._pending_auth_result = None
+
+        if result is not None:
+            self.handle_auth_result(result)
+
+    # ---- auth / logout --------------------------------------------------
     def handle_auth_result(self, result):
         self.session_manager.is_authenticating = False
         self.session_manager.set_auth_attempt()
         clean_result = result.replace("_", " ")
 
         if result in ("NO_FACE", "UNKNOWN"):
+            # A failed/unknown check breaks the consecutive-swap confirmation.
+            self._switch_candidate = None
+            self._switch_candidate_hits = 0
             if not self.session_manager.is_authenticated():
                 self.auth_message = "UNKNOWN USER"
                 self.auth_color = "error"
             return
 
         if not self.session_manager.is_authenticated():
+            self._switch_candidate = None
+            self._switch_candidate_hits = 0
             self.session_manager.set_user(clean_result)
             self.wash_detector.reset_state()
             self.auth_message = f"{clean_result} LOGGED IN"
             self.auth_color = "success"
-        elif self.session_manager.current_user != clean_result:
-            logging.info(f"[{self.camera_name} SWAP] {self.session_manager.current_user} left, {clean_result} in.")
-            self.logout_user()
-            self.session_manager.set_user(clean_result)
-            self.wash_detector.reset_state()
-            self.auth_message = f"SWAPPED TO {clean_result}"
-            self.auth_color = "success"
-        else:
+            return
+
+        if self.session_manager.current_user == clean_result:
+            # Same person confirmed: cancel any pending swap candidate.
+            self._switch_candidate = None
+            self._switch_candidate_hits = 0
             self.session_manager.update_presence()
+            self.auth_message = f"{clean_result} LOGGED IN"
+            self.auth_color = "success"
+            return
+
+        # A different person is visible. Require two consecutive successful
+        # recognitions of that SAME identity before ending the current session.
+        if self._switch_candidate == clean_result:
+            self._switch_candidate_hits += 1
+        else:
+            self._switch_candidate = clean_result
+            self._switch_candidate_hits = 1
+
+        logging.info(
+            f"[{self.camera_name} SWAP CHECK] candidate={clean_result} "
+            f"hits={self._switch_candidate_hits}/{self._switch_confirmations_required}"
+        )
+
+        if self._switch_candidate_hits < self._switch_confirmations_required:
+            self.auth_message = f"VERIFYING {clean_result}..."
+            self.auth_color = "warning"
+            return
+
+        previous_user = self.session_manager.current_user
+        logging.info(f"[{self.camera_name} SWAP] {previous_user} left, {clean_result} in.")
+        self.logout_user()
+        self.session_manager.set_user(clean_result)
+        self.wash_detector.reset_state()
+        self._switch_candidate = None
+        self._switch_candidate_hits = 0
+        self.auth_message = f"SWAPPED TO {clean_result}"
+        self.auth_color = "success"
 
     def logout_user(self):
         if self.session_manager.is_authenticated():

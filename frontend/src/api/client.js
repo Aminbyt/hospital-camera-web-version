@@ -15,6 +15,7 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  health: () => request("/api/health"),
   cameras: {
     list: () => request("/api/cameras"),
     create: (data) => request("/api/cameras", { method: "POST", body: JSON.stringify(data) }),

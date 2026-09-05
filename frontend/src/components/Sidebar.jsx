@@ -1,36 +1,42 @@
 import { NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { api } from '../api/client'
 
 const links = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/live', label: 'Live Cameras' },
-  { to: '/alerts', label: 'Alerts' },
-  { to: '/events', label: 'Events / History' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/', label: 'Dashboard', icon: '▦', end: true },
+  { to: '/rooms', label: 'Rooms', icon: '▤' },
+  { to: '/cameras', label: 'Cameras', icon: '◉' },
+  { to: '/alerts', label: 'Alerts', icon: '△' },
+  { to: '/events', label: 'Events', icon: '≡' },
+  { to: '/settings', label: 'Settings', icon: '⚙' },
 ]
 
 export default function Sidebar() {
+  const [backend, setBackend] = useState(false)
+  useEffect(() => {
+    const load = () => api.health().then(() => setBackend(true)).catch(() => setBackend(false))
+    load(); const t = setInterval(load, 5000); return () => clearInterval(t)
+  }, [])
+
   return (
-    <div className="sidebar">
+    <aside className="sidebar">
       <div className="sidebar-brand">
-        HOSPITAL CAMERA AI
-        <span>MONITORING CONSOLE</span>
+        <div className="brand-mark">A</div>
+        <div>AKAM HEALTH<span>SMART SCRUB VISION</span></div>
       </div>
       <nav className="sidebar-nav">
         {links.map((l) => (
-          <NavLink
-            key={l.to}
-            to={l.to}
-            end={l.end}
-            className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}
-          >
-            {l.label}
+          <NavLink key={l.to} to={l.to} end={l.end}
+            className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+            <span className="nav-icon">{l.icon}</span>{l.label}
           </NavLink>
         ))}
       </nav>
       <div className="sidebar-foot">
-        BACKEND · localhost:8000<br />
-        All cameras, thresholds and<br />bot settings are configured live<br />from this console.
+        <div className="system-line"><span className={'status-dot ' + (backend ? 'online' : 'offline')} />System {backend ? 'Online' : 'Offline'}</div>
+        <div className="system-row"><span>Backend</span><strong>{backend ? 'Connected' : 'Unavailable'}</strong></div>
+        <div className="system-row"><span>AI Engine</span><strong>{backend ? 'Ready' : 'Unknown'}</strong></div>
       </div>
-    </div>
+    </aside>
   )
 }

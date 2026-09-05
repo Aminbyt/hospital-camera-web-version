@@ -196,12 +196,12 @@ export default function Settings() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Settings</h1>
-          <div className="page-subtitle">Cameras, thresholds and bot alerts — all live, nothing hardcoded</div>
+          <span className="eyebrow">ADMINISTRATION</span><h1 className="page-title">Settings</h1>
+          <div className="page-subtitle">AI detection, hand washing, notifications, staff and system configuration</div>
         </div>
       </div>
 
-      <div className="card-title" style={{ marginBottom: 10 }}>Cameras</div>
+      <div className="settings-section-label">CAMERAS</div><div className="card-title" style={{ marginBottom: 10 }}>Camera quick controls</div>
       {cameras.length > 0 && (
         <table className="data-table" style={{ marginBottom: 20 }}>
           <thead>
@@ -218,7 +218,7 @@ export default function Settings() {
 
       {settings && (
         <form onSubmit={saveSettings}>
-          <div className="card-title" style={{ marginBottom: 10 }}>Detection defaults</div>
+          <div className="settings-section-label">AI DETECTION</div><div className="card-title" style={{ marginBottom: 10 }}>Detection defaults</div>
           <div className="card" style={{ marginBottom: 20 }}>
             <label className="checkbox-row">
               <input type="checkbox" checked={settings.check_mask_default}
@@ -237,7 +237,7 @@ export default function Settings() {
             </label>
           </div>
 
-          <div className="card-title" style={{ marginBottom: 10 }}>Wash timing & thresholds</div>
+          <div className="settings-section-label">FACE RECOGNITION & HAND WASHING</div><div className="card-title" style={{ marginBottom: 10 }}>Wash timing & thresholds</div>
           <div className="card" style={{ marginBottom: 20, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
             <div className="field">
               <label>Minimum wash time (s)</label>
@@ -271,7 +271,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="card-title" style={{ marginBottom: 10 }}>Bot notifications</div>
+          <div className="settings-section-label">NOTIFICATIONS</div><div className="card-title" style={{ marginBottom: 10 }}>Bot notifications</div>
           <div className="card" style={{ marginBottom: 20, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 14 }}>
             <div className="field">
               <label>Bot API URL</label>
@@ -298,7 +298,7 @@ export default function Settings() {
       )}
 
       <div className="section-divider" />
-      <RegistrationPanel cameras={cameras} />
+      <div className="settings-section-label">STAFF</div><RegistrationPanel cameras={cameras} />
     </div>
   )
 }

@@ -1,79 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import { withMeta } from '../utils/hospitalMeta'
 
-export default function Events() {
-  const [events, setEvents] = useState([])
-  const [cameras, setCameras] = useState([])
-  const [filters, setFilters] = useState({ camera_id: '', date_from: '', date_to: '', user: '' })
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => { api.cameras.list().then(setCameras) }, [])
-
-  const load = () => {
-    setLoading(true)
-    const params = {}
-    Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v })
-    api.events.list(params).then(setEvents).finally(() => setLoading(false))
-  }
-
-  useEffect(load, [])
-
-  return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Events / History</h1>
-          <div className="page-subtitle">Every logged visit — filter, review, export</div>
-        </div>
-        <a className="btn btn-primary" href={api.events.exportUrl(
-          Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
-        )}>Export to Excel</a>
-      </div>
-
-      <div className="toolbar">
-        <select className="field" style={{ marginBottom: 0 }} value={filters.camera_id}
-          onChange={(e) => setFilters({ ...filters, camera_id: e.target.value })}>
-          <option value="">All cameras</option>
-          {cameras.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <input placeholder="From (YYYY-MM-DD)" value={filters.date_from}
-          onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} />
-        <input placeholder="To (YYYY-MM-DD)" value={filters.date_to}
-          onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} />
-        <input placeholder="Search staff name…" value={filters.user}
-          onChange={(e) => setFilters({ ...filters, user: e.target.value })} />
-        <button className="btn" onClick={load}>Apply filters</button>
-      </div>
-
-      {loading && <p className="muted">Loading…</p>}
-      {!loading && events.length === 0 && <div className="empty-state">No events match these filters.</div>}
-
-      {!loading && events.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Date</th><th>Time</th><th>Sink</th><th>Staff</th><th>Role</th>
-              <th>Mask</th><th>Hat</th><th>Wash</th><th>Duration</th><th>WHO Steps</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((e) => (
-              <tr key={e.id}>
-                <td className="mono">{e.date}</td>
-                <td className="mono">{e.time}</td>
-                <td>{e.camera_name}</td>
-                <td>{e.first_name} {e.last_name}</td>
-                <td>{e.role}</td>
-                <td>{e.mask === 'YES' ? '✓' : '✕'}</td>
-                <td>{e.hat === 'YES' ? '✓' : '✕'}</td>
-                <td>{e.washing_complete === 'YES' ? '✓' : '✕'}</td>
-                <td className="mono">{e.wash_duration}s</td>
-                <td>{e.all_who_steps === 'YES' ? '✓' : '✕'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  )
+function pass(v){return v==='YES'?<span className="result-pass">PASS</span>:<span className="result-fail">FAIL</span>}
+function compliant(e){return e.mask==='YES'&&e.hat==='YES'&&e.washing_complete==='YES'&&e.all_who_steps==='YES'}
+export default function Events(){
+  const [events,setEvents]=useState([]),[cameras,setCameras]=useState([]),[loading,setLoading]=useState(true),[selected,setSelected]=useState(null),[page,setPage]=useState(1)
+  const [filters,setFilters]=useState({camera_id:'',date_from:'',date_to:'',user:'',department:'',room:'',compliance:''})
+  useEffect(()=>{api.cameras.list().then(c=>setCameras(c.map(withMeta)))},[])
+  const load=()=>{setLoading(true);const params={};['camera_id','date_from','date_to','user'].forEach(k=>{if(filters[k])params[k]=filters[k]});api.events.list(params).then(setEvents).finally(()=>setLoading(false))}
+  useEffect(load,[])
+  const camById=Object.fromEntries(cameras.map(c=>[c.id,c])), camByName=Object.fromEntries(cameras.map(c=>[c.name,c]))
+  const departments=[...new Set(cameras.map(c=>c.meta.department))].sort(), rooms=[...new Set(cameras.map(c=>c.room).filter(Boolean))].sort()
+  const filtered=useMemo(()=>events.filter(e=>{const c=camById[e.camera_id]||camByName[e.camera_name];return (!filters.department||c?.meta.department===filters.department)&&(!filters.room||c?.room===filters.room)&&(!filters.compliance||(filters.compliance==='compliant'?compliant(e):!compliant(e))) }),[events,cameras,filters.department,filters.room,filters.compliance])
+  const size=20,total=Math.max(1,Math.ceil(filtered.length/size)),shown=filtered.slice((page-1)*size,page*size)
+  useEffect(()=>setPage(1),[filters.department,filters.room,filters.compliance])
+  return <div><div className="page-header"><div><span className="eyebrow">INVESTIGATION / HISTORY</span><h1 className="page-title">Events</h1><div className="page-subtitle">Search and review completed hand-hygiene sessions</div></div><a className="btn btn-primary" href={api.events.exportUrl(Object.fromEntries(Object.entries(filters).filter(([k,v])=>v&&['camera_id','date_from','date_to','user'].includes(k))))}>Export to Excel</a></div>
+    <div className="filter-panel"><input type="date" value={filters.date_from} onChange={e=>setFilters({...filters,date_from:e.target.value})}/><input type="date" value={filters.date_to} onChange={e=>setFilters({...filters,date_to:e.target.value})}/><select value={filters.department} onChange={e=>setFilters({...filters,department:e.target.value})}><option value="">All departments</option>{departments.map(v=><option key={v}>{v}</option>)}</select><select value={filters.room} onChange={e=>setFilters({...filters,room:e.target.value})}><option value="">All rooms</option>{rooms.map(v=><option key={v}>{v}</option>)}</select><select value={filters.camera_id} onChange={e=>setFilters({...filters,camera_id:e.target.value})}><option value="">All cameras</option>{cameras.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select><input placeholder="Search user…" value={filters.user} onChange={e=>setFilters({...filters,user:e.target.value})}/><select value={filters.compliance} onChange={e=>setFilters({...filters,compliance:e.target.value})}><option value="">All results</option><option value="compliant">Compliant</option><option value="non">Non-compliant</option></select><button className="btn" onClick={load}>Apply</button></div>
+    {loading?<div className="empty-state">Loading event history…</div>:<div className="table-shell"><table className="data-table events-table"><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Room</th><th>Camera</th><th>Mask</th><th>Hat</th><th>Hand Washing</th><th>WHO Steps</th><th>Final Result</th></tr></thead><tbody>{shown.map(e=>{const c=camById[e.camera_id]||camByName[e.camera_name];return <tr key={e.id} onClick={()=>setSelected(e)} className="clickable-row"><td><strong>{e.time}</strong><small>{e.date}</small></td><td>{e.first_name} {e.last_name}</td><td>{e.role}</td><td>{c?.room||'—'}</td><td>{e.camera_name}</td><td>{pass(e.mask)}</td><td>{pass(e.hat)}</td><td>{e.wash_duration}s</td><td>{e.all_who_steps==='YES'?'6 / 6':'INCOMPLETE'}</td><td><span className={'final-result '+(compliant(e)?'pass':'fail')}>{compliant(e)?'✓ COMPLIANT':'ATTENTION'}</span></td></tr>})}</tbody></table></div>}
+    {!loading&&!filtered.length&&<div className="empty-state">No events match these filters.</div>}
+    {filtered.length>size&&<div className="pagination"><button className="btn btn-sm" disabled={page===1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {total}</span><button className="btn btn-sm" disabled={page===total} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
+    {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><div className="modal card event-modal" onClick={e=>e.stopPropagation()}><div className="modal-head"><div><span className="eyebrow">EVENT #{selected.id}</span><h2>{selected.first_name} {selected.last_name}</h2></div><button className="icon-button" onClick={()=>setSelected(null)}>×</button></div><div className="info-grid"><div><span>Date / Time</span><strong>{selected.date} {selected.time}</strong></div><div><span>Role</span><strong>{selected.role}</strong></div><div><span>Camera</span><strong>{selected.camera_name}</strong></div><div><span>Wash Duration</span><strong>{selected.wash_duration}s</strong></div><div><span>Mask</span><strong>{selected.mask}</strong></div><div><span>Hat</span><strong>{selected.hat}</strong></div><div><span>Hand Wash</span><strong>{selected.washing_complete}</strong></div><div><span>WHO Steps</span><strong>{selected.all_who_steps}</strong></div></div><div className={'final-compliance '+(compliant(selected)?'pass':'attention')}><span>FINAL RESULT</span><strong>{compliant(selected)?'✓ COMPLIANT':'ACTION REQUIRED'}</strong></div></div></div>}
+  </div>
 }
